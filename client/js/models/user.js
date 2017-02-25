@@ -49,7 +49,7 @@ module.exports = {
     dats: (state, user, send, done) => {
       api.users.get({username: user.username}, function (err, resp, json) {
         if (err || resp.statusCode !== 200) return done()
-        if (!json.length) return done
+        if (!json.length) return done()
         api.dats.get({user_id: json[0].id}, function (err, resp, json) {
           if (err || resp.statusCode !== 200) return done()
           send('user:update', {dats: json}, done)
