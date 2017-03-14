@@ -1,4 +1,5 @@
 const fs = require('fs')
+const collect = require('collect-stream')
 const path = require('path')
 const compression = require('compression')
 const bodyParser = require('body-parser')
@@ -8,6 +9,7 @@ const UrlParams = require('uparams')
 const bole = require('bole')
 const express = require('express')
 const redirect = require('express-simple-redirect')
+const xtend = require('xtend')
 const entryStream = require('./entryStream')
 const app = require('../client/js/app')
 const page = require('./page')
@@ -89,6 +91,37 @@ module.exports = function (opts, db) {
     })
   })
 
+  function getMetadata (archive, cb) {
+    var readStream = archive.createFileReadStream('dat.json')
+    collect(readStream, function (err, metadata) {
+      if (err) return cb(err)
+      var dat = {
+        peers: getPeers(archive.content.peers),
+        size: archive.content.bytes,
+        metadata: JSON.parse(metadata.toString())
+      }
+      entryStream(archive, function (err, entries) {
+        if (err) return onerror(err)
+        log.info('got %s entries without error', entries.length)
+        dat.entries = entries
+        return cb(null, dat)
+      })
+    })
+  }
+
+  router.get('/metadata/:archiveKey', function (req, res) {
+    dats.get(req.params.archiveKey, function (err, archive) {
+      if (err) return onerror(err, res)
+      dats.file(req.params.archiveKey, 'dat.json', function (err) {
+        if (err) return onerror(err, res)
+        getMetadata(archive, function (err, info) {
+          if (err) return onerror(err, res)
+          return res.status(200).json(info)
+        })
+      })
+    })
+  })
+
   router.get('/:username/:dataset', function (req, res) {
     log.debug('requesting username/dataset', req.params)
     db.queries.getDatByShortname(req.params, function (err, dat) {
@@ -118,6 +151,11 @@ module.exports = function (opts, db) {
   }
 
   function archiveRoute (key, cb) {
+    function onerror (err) {
+      log.warn(key, err)
+      state.archive.error = {message: err.message}
+      return cb(state)
+    }
     var state = getDefaultAppState()
     try {
       state.archive.key = encoding.toStr(key)
@@ -128,21 +166,12 @@ module.exports = function (opts, db) {
     dats.get(state.archive.key, function (err, archive) {
       if (err) return onerror(err)
       log.info('got archive', archive.key.toString('hex'))
-      entryStream(archive, function (err, entries) {
+      getMetadata(archive, function (err, data) {
         if (err) return onerror(err)
-        log.info('got %s entries without error', entries.length)
-        state.archive.entries = entries
-        state.archive.peers = getPeers(archive.metadata.peers)
-        state.archive.size = archive.content.bytes
+        state.archive = xtend(state.archive, data)
         cb(state)
       })
     })
-
-    function onerror (err) {
-      log.warn(key, err)
-      state.archive.error = {message: err.message}
-      return cb(state)
-    }
   }
 
   function getPeers (peers) {
