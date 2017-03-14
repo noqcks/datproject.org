@@ -93,12 +93,11 @@ module.exports = function (opts, db) {
 
   function getMetadata (archive, cb) {
     var readStream = archive.createFileReadStream('dat.json')
-    collect(readStream, function (err, metadata) {
-      if (err) return cb(err)
+    collect(readStream, function (_, metadata) {
       var dat = {
         peers: getPeers(archive.content.peers),
         size: archive.content.bytes,
-        metadata: JSON.parse(metadata.toString())
+        metadata: metadata ? JSON.parse(metadata.toString()) : undefined
       }
       entryStream(archive, function (err, entries) {
         if (err) return onerror(err)
